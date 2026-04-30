@@ -4,9 +4,9 @@ Backend service for generating and managing chess puzzles. Built with FastAPI us
 
 ## Architecture Overview
 
-To ensure the CPU-heavy chess engine does not block web requests, the backend is split into two decoupled microservices:
-1. **API App (Web)**: Fast, I/O-bound service that consumes puzzles from the MongoDB database and serves them to clients.
-2. **Worker App (Generator)**: CPU-bound background service that uses the Stockfish engine to generate puzzles and writes them directly into the MongoDB database.
+To keep the system simple and performant, the backend is split into two independent components:
+1. **API App (Web)**: Fast, I/O-bound FastAPI service that consumes puzzles from the MongoDB database and serves them to clients.
+2. **Generator**: A separate process that uses the Stockfish engine to generate puzzles and writes them directly into the MongoDB database.
 
 ```mermaid
 graph TD
@@ -16,36 +16,28 @@ graph TD
 
     subgraph "FastAPI Web Server"
         API[API Endpoints]
-        Publisher[Redis Publisher]
     end
 
     subgraph "Background Engine"
-        Worker[Queue Consumer]
+        Generator[Puzzle Generator]
         Stockfish[Stockfish Engine]
     end
 
     DB[(MongoDB)]
-    RedisQueue[(Redis Queue)]
 
     %% API Read Flow
     Web -- "Reads Puzzles" --> API
     API -- "Fetches from" --> DB
     
-    %% Generation Request Flow
-    API -- "POST /generate" --> Publisher
-    Publisher -- "Push Task" --> RedisQueue
-    
     %% Worker Generation Flow
-    RedisQueue -- "Pop Task" --> Worker
-    Worker -- "Evaluate" --> Stockfish
-    Worker -- "Writes New Puzzle" --> DB
+    Generator -- "Evaluates Position" --> Stockfish
+    Generator -- "Writes New Puzzle" --> DB
 ```
 
 ## Prerequisites
 
 - Python 3.8+
 - MongoDB
-- Redis (Required as a message broker for the generation queue)
 
 ## Installation
 
@@ -74,7 +66,6 @@ Create a `.env` file in the `backend` directory with the following configuration
 PROJECT_NAME="Chess Puzzle API"
 MONGODB_URI="mongodb://localhost:27017"
 MONGODB_DB_NAME="chess_puzzles"
-REDIS_URI="redis://localhost:6379/0"
 ```
 
 ## Running the Server
@@ -135,19 +126,6 @@ POST /api/v1/puzzles
 }
 ```
 **Response (201 Created):** Returns the saved puzzle with its generated MongoDB `id`.
-
-#### Trigger Puzzle Generation
-
-```http
-POST /api/v1/puzzles/generate
-```
-**Description:** Asynchronously triggers the backend worker to generate a new puzzle. Does not block the web server.
-**Response (202 Accepted):**
-```json
-{
-  "message": "Puzzle generation task queued"
-}
-```
 
 ## Development
 
